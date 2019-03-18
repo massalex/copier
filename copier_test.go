@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinzhu/copier"
+	"github.com/massalex/copier"
 )
 
 type User struct {
@@ -77,24 +77,24 @@ func TestCopyStruct(t *testing.T) {
 	user := User{Name: "Jinzhu", Nickname: "jinzhu", Age: 18, FakeAge: &fakeAge, Role: "Admin", Notes: []string{"hello world", "welcome"}, flags: []byte{'x'}}
 	employee := Employee{}
 
-	if err := copier.Copy(employee, &user); err == nil {
+	if err := copier.New(&user, employee, ""); err == nil {
 		t.Errorf("Copy to unaddressable value should get error")
 	}
 
-	copier.Copy(&employee, &user)
+	copier.New(&user, &employee, "").Copy()
 	checkEmployee(employee, user, t, "Copy From Ptr To Ptr")
 
 	employee2 := Employee{}
-	copier.Copy(&employee2, user)
+	copier.New(user, &employee2, "").Copy()
 	checkEmployee(employee2, user, t, "Copy From Struct To Ptr")
 
 	employee3 := Employee{}
 	ptrToUser := &user
-	copier.Copy(&employee3, &ptrToUser)
+	copier.New(&ptrToUser, &employee3, "").Copy()
 	checkEmployee(employee3, user, t, "Copy From Double Ptr To Ptr")
 
 	employee4 := &Employee{}
-	copier.Copy(&employee4, user)
+	copier.New(user, &employee4, "").Copy()
 	checkEmployee(*employee4, user, t, "Copy From Ptr To Double Ptr")
 }
 
@@ -102,32 +102,32 @@ func TestCopyFromStructToSlice(t *testing.T) {
 	user := User{Name: "Jinzhu", Age: 18, Role: "Admin", Notes: []string{"hello world"}}
 	employees := []Employee{}
 
-	if err := copier.Copy(employees, &user); err != nil && len(employees) != 0 {
+	if err := copier.New(&user, employees, "").Copy(); err != nil && len(employees) != 0 {
 		t.Errorf("Copy to unaddressable value should get error")
 	}
 
-	if copier.Copy(&employees, &user); len(employees) != 1 {
+	if copier.New(&user, &employees, "").Copy(); len(employees) != 1 {
 		t.Errorf("Should only have one elem when copy struct to slice")
 	} else {
 		checkEmployee(employees[0], user, t, "Copy From Struct To Slice Ptr")
 	}
 
 	employees2 := &[]Employee{}
-	if copier.Copy(&employees2, user); len(*employees2) != 1 {
+	if copier.New(user, &employees2, "").Copy(); len(*employees2) != 1 {
 		t.Errorf("Should only have one elem when copy struct to slice")
 	} else {
 		checkEmployee((*employees2)[0], user, t, "Copy From Struct To Double Slice Ptr")
 	}
 
 	employees3 := []*Employee{}
-	if copier.Copy(&employees3, user); len(employees3) != 1 {
+	if copier.New(user, &employees3, "").Copy(); len(employees3) != 1 {
 		t.Errorf("Should only have one elem when copy struct to slice")
 	} else {
 		checkEmployee(*(employees3[0]), user, t, "Copy From Struct To Ptr Slice Ptr")
 	}
 
 	employees4 := &[]*Employee{}
-	if copier.Copy(&employees4, user); len(*employees4) != 1 {
+	if copier.New(user, &employees4, "").Copy(); len(*employees4) != 1 {
 		t.Errorf("Should only have one elem when copy struct to slice")
 	} else {
 		checkEmployee(*((*employees4)[0]), user, t, "Copy From Struct To Double Ptr Slice Ptr")
@@ -138,7 +138,7 @@ func TestCopyFromSliceToSlice(t *testing.T) {
 	users := []User{User{Name: "Jinzhu", Age: 18, Role: "Admin", Notes: []string{"hello world"}}, User{Name: "Jinzhu2", Age: 22, Role: "Dev", Notes: []string{"hello world", "hello"}}}
 	employees := []Employee{}
 
-	if copier.Copy(&employees, users); len(employees) != 2 {
+	if copier.New(users, &employees, "").Copy(); len(employees) != 2 {
 		t.Errorf("Should have two elems when copy slice to slice")
 	} else {
 		checkEmployee(employees[0], users[0], t, "Copy From Slice To Slice Ptr @ 1")
@@ -146,7 +146,7 @@ func TestCopyFromSliceToSlice(t *testing.T) {
 	}
 
 	employees2 := &[]Employee{}
-	if copier.Copy(&employees2, &users); len(*employees2) != 2 {
+	if copier.New(&users, &employees2, "").Copy(); len(*employees2) != 2 {
 		t.Errorf("Should have two elems when copy slice to slice")
 	} else {
 		checkEmployee((*employees2)[0], users[0], t, "Copy From Slice Ptr To Double Slice Ptr @ 1")
@@ -154,7 +154,7 @@ func TestCopyFromSliceToSlice(t *testing.T) {
 	}
 
 	employees3 := []*Employee{}
-	if copier.Copy(&employees3, users); len(employees3) != 2 {
+	if copier.New(users, &employees3, "").Copy(); len(employees3) != 2 {
 		t.Errorf("Should have two elems when copy slice to slice")
 	} else {
 		checkEmployee(*(employees3[0]), users[0], t, "Copy From Slice To Ptr Slice Ptr @ 1")
@@ -162,7 +162,7 @@ func TestCopyFromSliceToSlice(t *testing.T) {
 	}
 
 	employees4 := &[]*Employee{}
-	if copier.Copy(&employees4, users); len(*employees4) != 2 {
+	if copier.New(users, &employees4, "").Copy(); len(*employees4) != 2 {
 		t.Errorf("Should have two elems when copy slice to slice")
 	} else {
 		checkEmployee(*((*employees4)[0]), users[0], t, "Copy From Slice Ptr To Double Ptr Slice Ptr @ 1")
@@ -189,7 +189,7 @@ func TestEmbedded(t *testing.T) {
 	embeded.EmbedField1 = 3
 	embeded.EmbedField2 = 4
 
-	copier.Copy(&base, &embeded)
+	copier.New(&embeded, &base, "").Copy()
 
 	if base.BaseField1 != 1 {
 		t.Error("Embedded fields not copied")
@@ -211,7 +211,7 @@ type structSameName2 struct {
 func TestCopyFieldsWithSameNameButDifferentTypes(t *testing.T) {
 	obj1 := structSameName1{A: "123", B: 2, C: time.Now()}
 	obj2 := &structSameName2{}
-	err := copier.Copy(obj2, &obj1)
+	err := copier.New(&obj1, obj2, "").Copy()
 	if err != nil {
 		t.Error("Should not raise error")
 	}
@@ -246,7 +246,7 @@ func TestScanner(t *testing.T) {
 
 	s2 := &ScannerStructTo{}
 
-	err := copier.Copy(s2, s)
+	err := copier.New(s, s2, "").Copy()
 	if err != nil {
 		t.Error("Should not raise error")
 	}

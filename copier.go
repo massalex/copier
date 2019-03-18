@@ -3,75 +3,103 @@ package copier
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 )
 
-// Copy copy things
-func Copy(toValue interface{}, fromValue interface{}) (err error) {
-	var (
-		isSlice bool
-		amount  = 1
-		from    = indirect(reflect.ValueOf(fromValue))
-		to      = indirect(reflect.ValueOf(toValue))
-	)
+type instance struct {
+	isSlice   bool
+	amount    int
+	from      reflect.Value
+	to        reflect.Value
+	mapSuffix string
+}
 
-	if !to.CanAddr() {
+func New(from interface{}, to interface{}, mapSuffix string) *instance {
+	return &instance{
+		amount: 1,
+		from: indirect(reflect.ValueOf(from)),
+		to: indirect(reflect.ValueOf(to)),
+		mapSuffix: mapSuffix,
+	}
+}
+
+// Copy copy things
+func (copier *instance) Copy() (err error) {
+	if !copier.to.CanAddr() {
 		return errors.New("copy to value is unaddressable")
 	}
 
 	// Return is from value is invalid
-	if !from.IsValid() {
-		return
+	if !copier.from.IsValid() {
+		return errors.New("from value is invalid")
 	}
 
 	// Just set it if possible to assign
-	if from.Type().AssignableTo(to.Type()) {
-		to.Set(from)
+	if copier.from.Type().AssignableTo(copier.to.Type()) {
+		copier.to.Set(copier.from)
 		return
 	}
 
-	fromType := indirectType(from.Type())
-	toType := indirectType(to.Type())
+	fromType := indirectType(copier.from.Type())
+	toType := indirectType(copier.to.Type())
 
 	if fromType.Kind() != reflect.Struct || toType.Kind() != reflect.Struct {
 		return
 	}
 
-	if to.Kind() == reflect.Slice {
-		isSlice = true
-		if from.Kind() == reflect.Slice {
-			amount = from.Len()
+	if copier.to.Kind() == reflect.Slice {
+		copier.isSlice = true
+		if copier.from.Kind() == reflect.Slice {
+			copier.amount = copier.from.Len()
 		}
 	}
 
-	for i := 0; i < amount; i++ {
+	for i := 0; i < copier.amount; i++ {
 		var dest, source reflect.Value
 
-		if isSlice {
+		if copier.isSlice {
 			// source
-			if from.Kind() == reflect.Slice {
-				source = indirect(from.Index(i))
+			if copier.from.Kind() == reflect.Slice {
+				source = indirect(copier.from.Index(i))
 			} else {
-				source = indirect(from)
+				source = indirect(copier.from)
 			}
 
 			// dest
 			dest = indirect(reflect.New(toType).Elem())
 		} else {
-			source = indirect(from)
-			dest = indirect(to)
+			source = indirect(copier.from)
+			dest = indirect(copier.to)
 		}
 
-		// Copy from field to field or method
+		// Copy from field to field or map method or method
 		for _, field := range deepFields(fromType) {
 			name := field.Name
 
 			if fromField := source.FieldByName(name); fromField.IsValid() {
-				// has field
-				if toField := dest.FieldByName(name); toField.IsValid() {
+				canAddr := dest.CanAddr()
+
+				var toMapMethod reflect.Value
+
+				if copier.mapSuffix != "" {
+					mapMethod := name + copier.mapSuffix
+					if canAddr {
+						toMapMethod = dest.Addr().MethodByName(mapMethod)
+					} else {
+						toMapMethod = dest.MethodByName(mapMethod)
+					}
+				}
+
+				// has map method
+				if toMapMethod.IsValid() && toMapMethod.Type().NumIn() == 1 && fromField.Type().AssignableTo(toMapMethod.Type().In(0)) {
+					toMapMethod.Call([]reflect.Value{fromField})
+				} else if toField := dest.FieldByName(name); toField.IsValid() {
+					// has field
 					if toField.CanSet() {
 						if !set(toField, fromField) {
-							if err := Copy(toField.Addr().Interface(), fromField.Interface()); err != nil {
+							fmt.Println("To field " + name)
+							if err := New(fromField.Interface(), toField.Addr().Interface(), copier.mapSuffix).Copy(); err != nil {
 								return err
 							}
 						}
@@ -79,7 +107,7 @@ func Copy(toValue interface{}, fromValue interface{}) (err error) {
 				} else {
 					// try to set to method
 					var toMethod reflect.Value
-					if dest.CanAddr() {
+					if canAddr {
 						toMethod = dest.Addr().MethodByName(name)
 					} else {
 						toMethod = dest.MethodByName(name)
@@ -95,7 +123,6 @@ func Copy(toValue interface{}, fromValue interface{}) (err error) {
 		// Copy from method to field
 		for _, field := range deepFields(toType) {
 			name := field.Name
-
 			var fromMethod reflect.Value
 			if source.CanAddr() {
 				fromMethod = source.Addr().MethodByName(name)
@@ -104,7 +131,7 @@ func Copy(toValue interface{}, fromValue interface{}) (err error) {
 			}
 
 			if fromMethod.IsValid() && fromMethod.Type().NumIn() == 0 && fromMethod.Type().NumOut() == 1 {
-				if toField := dest.FieldByName(name); toField.IsValid() && toField.CanSet() {
+				if toField := dest.FieldByName(field.Name); toField.IsValid() && toField.CanSet() {
 					values := fromMethod.Call([]reflect.Value{})
 					if len(values) >= 1 {
 						set(toField, values[0])
@@ -113,11 +140,11 @@ func Copy(toValue interface{}, fromValue interface{}) (err error) {
 			}
 		}
 
-		if isSlice {
-			if dest.Addr().Type().AssignableTo(to.Type().Elem()) {
-				to.Set(reflect.Append(to, dest.Addr()))
-			} else if dest.Type().AssignableTo(to.Type().Elem()) {
-				to.Set(reflect.Append(to, dest))
+		if copier.isSlice {
+			if dest.Addr().Type().AssignableTo(copier.to.Type().Elem()) {
+				copier.to.Set(reflect.Append(copier.to, dest.Addr()))
+			} else if dest.Type().AssignableTo(copier.to.Type().Elem()) {
+				copier.to.Set(reflect.Append(copier.to, dest))
 			}
 		}
 	}
