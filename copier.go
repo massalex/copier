@@ -3,7 +3,6 @@ package copier
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"reflect"
 )
 
@@ -98,7 +97,6 @@ func (copier *instance) Copy() (err error) {
 					// has field
 					if toField.CanSet() {
 						if !set(toField, fromField) {
-							fmt.Println("To field " + name)
 							if err := New(fromField.Interface(), toField.Addr().Interface(), copier.mapSuffix).Copy(); err != nil {
 								return err
 							}
