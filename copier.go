@@ -35,7 +35,7 @@ func (copier *instance) Copy() (err error) {
 	}
 
 	// Just set it if possible to assign
-	if copier.from.Type().AssignableTo(copier.to.Type()) {
+	if copier.mapSuffix == "" && copier.from.Type().AssignableTo(copier.to.Type()) {
 		copier.to.Set(copier.from)
 		return
 	}
